@@ -8,8 +8,16 @@ NORMALIZER := ffmpeg-normalize
 
 # configs
 #
-presentation_start_time := 00:05:52
-presentation_end_time := 00:51:15
+presentation_start_time := 00:09:27
+presentation_end_time := 00:56:22
+
+# list of choices:
+# * mixed
+# * ext_mic
+# * laptop_mic
+# * desktop
+# * phone
+use_audio_track := desktop
 
 noise_start_time := 00:18:42
 noise_duration := 00:00:01
@@ -37,31 +45,31 @@ phone.aac: phone-original.m4a
 	ffmpeg -i $< -c:a copy $@
 
 # band pass 500Hz to 3000Hz to filter noise
-phone-bandpassed.aac: phone.aac
+%-bandpassed.aac: %.aac
 	ffmpeg -i $< -af 'highpass=f=500, lowpass=f=3000' $@
-
-# get noisesample
-noise_sample.wav: audio-bandpassed.wav
-	ffmpeg -i $< -ss $(noise_start_time) -t $(noise_duration) $@
-
-# generate noise profile
-# use SOX, see https://unix.stackexchange.com/questions/140398/cleaning-voice-recordings-from-command-line
-noise.profile: noise_sample.wav
-	sox $< -n noiseprof $@
-
-audio-denoised.wav: audio-bandpassed.wav noise.profile
-	sox $< $@ noisered noise.profile 0.21
 
 # apply EBU R128 normalization to audio
 # need to install `ffmpeg-normalize`
 # see https://github.com/slhck/ffmpeg-normalize 
-desktop-normalized.aac: desktop.aac
+%-normalized.aac: %-bandpassed.aac
 	$(NORMALIZER) -f $< -o $@ \
 		-c:a aac
 
-phone-normalized.aac: phone-bandpassed.aac
-	$(NORMALIZER) -f $< -o $@ \
-		-c:a aac
+###############################################
+# If there is excessive noise in the audio
+# de-noise it
+###############################################
+# get noisesample
+%-noise_sample.wav: %-bandpassed.wav
+	ffmpeg -i $< -ss $(noise_start_time) -t $(noise_duration) $@
+
+# generate noise profile
+# use SOX, see https://unix.stackexchange.com/questions/140398/cleaning-voice-recordings-from-command-line
+%-noise.profile: %-noise_sample.wav
+	sox $< -n noiseprof $@
+
+%-denoised.wav: %-bandpassed.wav %-noise.profile
+	sox $< $@ noisered $*-noise.profile 0.21
 
 
 ###################################
@@ -71,8 +79,6 @@ phone-normalized.aac: phone-bandpassed.aac
 video-final.mp4: video.mp4
 	cp $< $@
 
-desktop-final.aac: desktop-normalized.aac
+%-final.aac: %-normalized.aac
 	cp $< $@
 
-phone-final.aac: phone-normalized.aac
-	cp $< $@
